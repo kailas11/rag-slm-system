@@ -36,11 +36,29 @@ class VectorStoreConfig:
 
 
 @dataclass
+class RerankerConfig:
+    """Configuration for result reranking."""
+
+    enabled: bool = True
+    method: str = "cross_encoder"  # "cohere" or "cross_encoder"
+    model: str = ""  # empty = use default per method
+    cohere_api_key: Optional[str] = None
+    top_k: int = 10  # candidates passed to reranker
+
+
+@dataclass
 class RetrieverConfig:
     """Configuration for RAG retrieval."""
 
+    mode: str = "hybrid"  # "dense", "sparse", or "hybrid"
     top_k: int = 5
     score_threshold: float = 0.3
+    dense_weight: float = 0.5
+    sparse_weight: float = 0.5
+    rrf_k: int = 60
+    bm25_k1: float = 1.5
+    bm25_b: float = 0.75
+    reranker: RerankerConfig = field(default_factory=RerankerConfig)
 
 
 @dataclass
@@ -84,5 +102,6 @@ class RAGConfig:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     retriever: RetrieverConfig = field(default_factory=RetrieverConfig)
+    reranker: RerankerConfig = field(default_factory=RerankerConfig)
     qa_generator: QAGeneratorConfig = field(default_factory=QAGeneratorConfig)
     fine_tuning: FineTuningConfig = field(default_factory=FineTuningConfig)

@@ -1,10 +1,7 @@
 """Tests for the QA pair generation module."""
 
-import json
 import tempfile
 from pathlib import Path
-
-import pytest
 
 from rag_slm_system.qa_generator.base import QAPair
 from rag_slm_system.qa_generator.template_qa_generator import TemplateQAGenerator

@@ -8,6 +8,7 @@ from rag_slm_system.chunking.factory import ChunkerFactory, detect_content_type
 from rag_slm_system.config import RAGConfig
 from rag_slm_system.embeddings.base import BaseEmbedder
 from rag_slm_system.qa_generator.base import BaseQAGenerator, QAPair
+from rag_slm_system.retriever.hybrid_retriever import HybridRetriever
 from rag_slm_system.retriever.rag_retriever import RAGRetriever
 from rag_slm_system.vectorstore.base import BaseVectorStore
 
@@ -31,7 +32,7 @@ class RAGPipeline:
         self._chunker_factory = ChunkerFactory(self.config.chunking)
         self._embedder: BaseEmbedder | None = None
         self._vector_store: BaseVectorStore | None = None
-        self._retriever: RAGRetriever | None = None
+        self._retriever: RAGRetriever | HybridRetriever | None = None
         self._qa_generator: BaseQAGenerator | None = None
         self._all_chunks: list[Chunk] = []
         self._all_qa_pairs: list[QAPair] = []
@@ -49,14 +50,9 @@ class RAGPipeline:
         return self._vector_store
 
     @property
-    def retriever(self) -> RAGRetriever:
+    def retriever(self) -> RAGRetriever | HybridRetriever:
         if self._retriever is None:
-            self._retriever = RAGRetriever(
-                embedder=self.embedder,
-                vector_store=self.vector_store,
-                top_k=self.config.retriever.top_k,
-                score_threshold=self.config.retriever.score_threshold,
-            )
+            self._retriever = self._create_retriever()
         return self._retriever
 
     @property
@@ -79,6 +75,9 @@ class RAGPipeline:
         texts = [c.text for c in chunks]
         embeddings = self.embedder.embed(texts)
         self.vector_store.add(chunks, embeddings)
+
+        if isinstance(self.retriever, HybridRetriever):
+            self.retriever.add_chunks(chunks)
 
         self._all_chunks.extend(chunks)
         logger.info(f"Total chunks in store: {self.vector_store.size}")
@@ -115,6 +114,9 @@ class RAGPipeline:
         texts = [c.text for c in chunks]
         embeddings = self.embedder.embed(texts)
         self.vector_store.add(chunks, embeddings)
+
+        if isinstance(self.retriever, HybridRetriever):
+            self.retriever.add_chunks(chunks)
 
         self._all_chunks.extend(chunks)
         return chunks
@@ -219,6 +221,54 @@ class RAGPipeline:
         return FAISSVectorStore(
             dimension=self.embedder.dimension,
             similarity_metric=self.config.vector_store.similarity_metric,
+        )
+
+    def _create_retriever(self) -> RAGRetriever | HybridRetriever:
+        cfg = self.config.retriever
+
+        if cfg.mode == "hybrid":
+            reranker = self._create_reranker()
+            retriever = HybridRetriever(
+                embedder=self.embedder,
+                vector_store=self.vector_store,
+                reranker=reranker,
+                top_k=cfg.top_k,
+                dense_weight=cfg.dense_weight,
+                sparse_weight=cfg.sparse_weight,
+                rrf_k=cfg.rrf_k,
+                fusion_top_k=cfg.reranker.top_k if cfg.reranker.enabled else cfg.top_k * 3,
+                score_threshold=cfg.score_threshold,
+                bm25_k1=cfg.bm25_k1,
+                bm25_b=cfg.bm25_b,
+            )
+            if self._all_chunks:
+                retriever.add_chunks(self._all_chunks)
+            return retriever
+
+        return RAGRetriever(
+            embedder=self.embedder,
+            vector_store=self.vector_store,
+            top_k=cfg.top_k,
+            score_threshold=cfg.score_threshold,
+        )
+
+    def _create_reranker(self):
+        cfg = self.config.retriever.reranker
+        if not cfg.enabled:
+            return None
+
+        if cfg.method == "cohere":
+            from rag_slm_system.retriever.reranker import CohereReranker
+
+            return CohereReranker(
+                api_key=cfg.cohere_api_key,
+                model=cfg.model or None,
+            )
+
+        from rag_slm_system.retriever.reranker import CrossEncoderReranker
+
+        return CrossEncoderReranker(
+            model_name=cfg.model or None,
         )
 
     def _create_qa_generator(self) -> BaseQAGenerator:

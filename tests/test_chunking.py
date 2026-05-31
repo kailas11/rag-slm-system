@@ -1,12 +1,11 @@
 """Tests for the content-aware chunking module."""
 
-import pytest
 
-from rag_slm_system.chunking.text_chunker import TextChunker
-from rag_slm_system.chunking.markdown_chunker import MarkdownChunker
 from rag_slm_system.chunking.code_chunker import CodeChunker
+from rag_slm_system.chunking.factory import ChunkerFactory, detect_content_type
 from rag_slm_system.chunking.html_chunker import HTMLChunker
-from rag_slm_system.chunking.factory import detect_content_type, ChunkerFactory
+from rag_slm_system.chunking.markdown_chunker import MarkdownChunker
+from rag_slm_system.chunking.text_chunker import TextChunker
 
 
 class TestTextChunker:
@@ -46,7 +45,11 @@ class TestTextChunker:
 class TestMarkdownChunker:
     def test_heading_split(self):
         chunker = MarkdownChunker(chunk_size=50, chunk_overlap=0, min_chunk_size=10)
-        text = "# Title\n\nIntro text here.\n\n## Section 1\n\nContent for section one.\n\n## Section 2\n\nContent for section two."
+        text = (
+            "# Title\n\nIntro text here.\n\n"
+            "## Section 1\n\nContent for section one.\n\n"
+            "## Section 2\n\nContent for section two."
+        )
         chunks = chunker.chunk(text, source="doc.md")
         assert len(chunks) >= 2
         assert all(c.content_type == "markdown" for c in chunks)
